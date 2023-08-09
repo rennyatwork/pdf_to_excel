@@ -1,0 +1,45 @@
+# Input directory containing PDF files
+$inputDirectory = "C:\path\to\pdf\files"
+
+# Output directory for Excel files
+$outputDirectory = "C:\path\to\output\excel\files"
+
+# Get all PDF files in the input directory
+$pdfFiles = Get-ChildItem -Path $inputDirectory -Filter "*.pdf"
+
+# Loop through each PDF file
+foreach ($pdfFile in $pdfFiles) {
+    # Construct the paths for input PDF and output Excel
+    $pdfPath = $pdfFile.FullName
+    $excelPath = Join-Path $outputDirectory ($pdfFile.BaseName + ".xlsx")
+
+    # Convert PDF to Text using pdftotext
+    $textTempPath = Join-Path $outputDirectory ($pdfFile.BaseName + ".txt")
+    Start-Process -Wait -FilePath pdftotext.exe -ArgumentList "-layout `"$pdfPath`" `"$textTempPath`""
+
+    # Convert Text to CSV
+    $tables = Get-Content -Path $textTempPath -Raw | Select-String -Pattern "<table>(.*?)</table>" -AllMatches | ForEach-Object { $_.Matches.Groups[1].Value }
+    $csvFileName = Join-Path $outputDirectory ($pdfFile.BaseName + ".csv")
+    foreach ($table in $tables) {
+        $tableData = $table | ConvertFrom-HtmlFragment
+        $tableData | ForEach-Object {
+            $_.Column1 = $_.Column1 -replace "`r`n", " "  # Replace newline with space
+            $_.Column2 = $_.Column2 -replace "`r`n", " "  # Replace newline with space
+            # ... Repeat for other columns
+        }
+        $tableData | Export-Csv -Path $csvFileName -NoTypeInformation -Append
+    }
+
+    # Convert CSV to Excel using ImportExcel module
+    Install-Module -Name ImportExcel -Force -Scope CurrentUser
+    Import-Module ImportExcel
+    $worksheet = New-ExcelWorksheet -Path $excelPath
+    $worksheet | Import-CSV $csvFileName | Export-Excel -Worksheet $worksheet -AutoSize -NoNumberConversion
+    Remove-Module ImportExcel
+
+    # Clean up temporary files
+    Remove-Item $textTempPath
+    Remove-Item $csvFileName
+
+    Write-Host "PDF '$pdfPath' converted and saved to '$excelPath'"
+}

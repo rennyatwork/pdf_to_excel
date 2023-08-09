@@ -1,0 +1,45 @@
+# Specify the path to the downloaded PDF file
+$pdfPath = 'path_to_downloaded_pdf.pdf'
+
+# Install the necessary module if not already installed
+# This step is required before you can use the Import-Excel module
+Install-Module -Name ImportExcel
+
+# Import the Import-Excel module for Excel-related operations
+Import-Module -Name ImportExcel
+
+# Extract tables from the PDF into an Excel file using tabula command-line tool
+tabulaPath = 'path_to_tabula_jar_file'
+$excelOutputPath = 'output_excel_file.xlsx'
+Start-Process -Wait -NoNewWindow -FilePath 'java' -ArgumentList "-jar", $tabulaPath, "--pages", "all", "--output", $excelOutputPath, $pdfPath
+
+# Import the Excel data into a PowerShell object using Import-Excel
+$data = Import-Excel -Path $excelOutputPath
+
+# Initialize an empty array to store rows after splitting
+$newRows = @()
+
+# Iterate through each row in the imported data
+foreach ($row in $data) {
+    # Iterate through each column and split values
+    foreach ($column in $row.PSObject.Properties) {
+        $splitValues = $column.Value -split '\r'
+        foreach ($value in $splitValues) {
+            # Create a new row with split value and original column name
+            $newRow = [PSCustomObject]@{
+                ColumnName = $column.Name
+                Value = $value
+            }
+            $newRows += $newRow
+        }
+    }
+}
+
+# Convert the array of rows to a PowerShell object
+$newData = $newRows | Select-Object ColumnName, Value
+
+# Display the new data
+$newData | Format-Table
+
+# Export the new data to a CSV file
+$newData | Export-Csv -Path 'output_csv_file.csv' -NoTypeInformation
